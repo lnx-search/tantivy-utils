@@ -99,7 +99,7 @@ impl Weight for PreScoredWeight {
     ) -> tantivy::Result<Explanation> {
         let mut scorer = self.specialized_scorer(reader, 1.0)?;
         if scorer.doc() > doc || scorer.seek(doc) != doc {
-            todo!("Handle error and find out what's explanation::does_not_match()")
+            return Err(tantivy::TantivyError::InvalidArgument(format!("Document #({}) does not match", doc)))
         }
 
         let mut explanation = Explanation::new(
