@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use tantivy::{DocId, DocSet, Score, Searcher, SegmentReader, Term};
+
 use tantivy::postings::SegmentPostings;
 use tantivy::query::{Explanation, Query, Scorer, Weight};
 use tantivy::schema::IndexRecordOption;
+use tantivy::{DocId, DocSet, Score, Searcher, SegmentReader, Term};
 
 #[derive(Clone)]
 pub struct PreScoredQuery {
@@ -14,12 +15,20 @@ pub struct PreScoredQuery {
 
 impl Debug for PreScoredQuery {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PreScoredQuery(term={:?}, score={})", self.term, self.score)
+        write!(
+            f,
+            "PreScoredQuery(term={:?}, score={})",
+            self.term, self.score
+        )
     }
 }
 
 impl PreScoredQuery {
-    pub fn new(term: Term, score: Score, index_record_option: IndexRecordOption) -> Self {
+    pub fn new(
+        term: Term,
+        score: Score,
+        index_record_option: IndexRecordOption,
+    ) -> Self {
         Self {
             term,
             score,
@@ -47,21 +56,26 @@ impl PreScoredQuery {
         Ok(PreScoredWeight {
             term: self.term.clone(),
             score: self.score,
-            index_record_option
+            index_record_option,
         })
     }
 }
 
 impl Query for PreScoredQuery {
-    fn weight(&self, searcher: &Searcher, scoring_enabled: bool) -> tantivy::Result<Box<dyn Weight>> {
-        Ok(Box::new(self.specialized_weight(searcher, scoring_enabled)?))
+    fn weight(
+        &self,
+        searcher: &Searcher,
+        scoring_enabled: bool,
+    ) -> tantivy::Result<Box<dyn Weight>> {
+        Ok(Box::new(
+            self.specialized_weight(searcher, scoring_enabled)?,
+        ))
     }
 
     fn query_terms(&self, terms: &mut BTreeMap<Term, bool>) {
         terms.insert(self.term.clone(), false);
     }
 }
-
 
 pub struct PreScoredWeight {
     term: Term,
@@ -70,17 +84,28 @@ pub struct PreScoredWeight {
 }
 
 impl Weight for PreScoredWeight {
-    fn scorer(&self, reader: &SegmentReader, boost: Score) -> tantivy::Result<Box<dyn Scorer>> {
+    fn scorer(
+        &self,
+        reader: &SegmentReader,
+        boost: Score,
+    ) -> tantivy::Result<Box<dyn Scorer>> {
         Ok(Box::new(self.specialized_scorer(reader, boost)?))
     }
 
-    fn explain(&self, reader: &SegmentReader, doc: DocId) -> tantivy::Result<Explanation> {
+    fn explain(
+        &self,
+        reader: &SegmentReader,
+        doc: DocId,
+    ) -> tantivy::Result<Explanation> {
         let mut scorer = self.specialized_scorer(reader, 1.0)?;
         if scorer.doc() > doc || scorer.seek(doc) != doc {
             todo!("Handle error and find out what's explanation::does_not_match()")
         }
 
-        let mut explanation = Explanation::new("Pre-scored query with a constant score for a given term.", self.score);
+        let mut explanation = Explanation::new(
+            "Pre-scored query with a constant score for a given term.",
+            self.score,
+        );
         explanation.add_context(format!("Term={:?}", self.term));
         Ok(explanation)
     }
@@ -109,13 +134,11 @@ impl PreScoredWeight {
     ) -> tantivy::Result<TermScorer> {
         let field = self.term.field();
         let inverted_index = reader.inverted_index(field)?;
-        let postings_opt: Option<SegmentPostings> = inverted_index.read_postings(&self.term, self.index_record_option)?;
+        let postings_opt: Option<SegmentPostings> =
+            inverted_index.read_postings(&self.term, self.index_record_option)?;
 
         if let Some(segment_postings) = postings_opt {
-            Ok(TermScorer::new(
-                segment_postings,
-                self.score * boost,
-            ))
+            Ok(TermScorer::new(segment_postings, self.score * boost))
         } else {
             Ok(TermScorer::new(
                 SegmentPostings::empty(),
@@ -132,10 +155,7 @@ pub struct TermScorer {
 
 impl TermScorer {
     pub fn new(postings: SegmentPostings, score: Score) -> Self {
-        Self {
-            postings,
-            score,
-        }
+        Self { postings, score }
     }
 }
 
@@ -159,13 +179,13 @@ impl Scorer for TermScorer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use tantivy::{doc, Index};
     use tantivy::collector::TopDocs;
     use tantivy::merge_policy::NoMergePolicy;
     use tantivy::schema::{Schema, TEXT};
+    use tantivy::{doc, Index};
+
     use super::*;
 
     #[test]
